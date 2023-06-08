@@ -142,6 +142,7 @@ class DatabricksCreateReusableJobClusterOperator(BaseOperator):
             time.sleep(5)
 
     def execute_in_submit_run_mode(self, json_normalised):
+        json_normalised["run_name"] = json_normalised.get("name", "infinite_loop_cluster_reuse_run")
         self.run_id = self._hook.submit_run(json_normalised)
         self.cluster_id = self._get_cluster_id(self.run_id)
         self.log.info("Run submitted with run_id: %s and cluster_id: %s", self.run_id, self.cluster_id)
