@@ -1,11 +1,10 @@
-from airflow.providers.databricks.operators.databricks import DatabricksSubmitRunOperator
-
-from reusable_job_cluster.operators import DatabricksCreateReusableJobClusterOperator, \
-    DatabricksDestroyReusableJobClusterOperator
-
 from datetime import datetime, timedelta
+
 from airflow import DAG
 from airflow.operators.dummy_operator import DummyOperator
+from airflow.providers.databricks.operators.databricks import DatabricksSubmitRunOperator
+
+from reusable_job_cluster.operators import DatabricksReusableJobCluster
 
 # Define the default arguments for the DAG
 default_args = {
@@ -20,8 +19,10 @@ dag = DAG('my_test_databricks_dummy_dag', default_args=default_args, schedule_in
 
 # Define the tasks/operators in the DAG
 start_task = DummyOperator(task_id='start_task', dag=dag)
-create_cluster_task = DatabricksCreateReusableJobClusterOperator(
-    new_cluster={
+
+create_cluster_task, delete_cluster_task, existing_cluster_id = DatabricksReusableJobCluster \
+    .builder() \
+    .with_new_cluster({
         "spark_version": "12.2.x-scala2.12",
         "aws_attributes": {
             "first_on_demand": 1,
@@ -38,21 +39,24 @@ create_cluster_task = DatabricksCreateReusableJobClusterOperator(
         "data_security_mode": "SINGLE_USER",
         "runtime_engine": "STANDARD",
         "num_workers": 8
-    },
-    task_id='create_cluster_task', dag=dag)
+    }) \
+    .with_dag(dag) \
+    .with_timeout_seconds(6000) \
+    .with_task_prefix(task_prefix="reusable_cluster") \
+    .with_run_now_mode() \
+    .build_operators()
+
 notebook_task = DatabricksSubmitRunOperator(
     task_id='spark_jar_task',
     databricks_conn_id="databricks_default",
-    existing_cluster_id="{{ task_instance.xcom_pull(task_ids='create_cluster_task', key='infinite_loop_cluster_id') }}",
+    existing_cluster_id=existing_cluster_id,
+    # "{{ task_instance.xcom_pull(task_ids='create_cluster_task', key='infinite_loop_cluster_id') }}",
     notebook_task={"notebook_path": "/Users/sri.tikkireddy@databricks.com/workflow-hack/helloworld"},
     dag=dag
 )
 
 dummy_task_1 = DummyOperator(task_id='dummy_task_1', dag=dag)
 dummy_task_2 = DummyOperator(task_id='dummy_task_2', dag=dag)
-delete_cluster_task = DatabricksDestroyReusableJobClusterOperator(task_id='delete_cluster_task',
-                                                                  job_create_task_id=create_cluster_task.task_id,
-                                                                  dag=dag)
 end_task = DummyOperator(task_id='end_task', dag=dag)
 
 # Set up the task dependencies

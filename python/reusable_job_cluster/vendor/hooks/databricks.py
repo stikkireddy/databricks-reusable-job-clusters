@@ -39,6 +39,8 @@ RESTART_CLUSTER_ENDPOINT = ("POST", "api/2.0/clusters/restart")
 START_CLUSTER_ENDPOINT = ("POST", "api/2.0/clusters/start")
 TERMINATE_CLUSTER_ENDPOINT = ("POST", "api/2.0/clusters/delete")
 
+CREATE_JOB_ENDPOINT = ("POST", "api/2.1/jobs/create")
+RESET_JOB_ENDPOINT = ("POST", "api/2.1/jobs/reset")
 RUN_NOW_ENDPOINT = ("POST", "api/2.1/jobs/run-now")
 SUBMIT_RUN_ENDPOINT = ("POST", "api/2.1/jobs/runs/submit")
 GET_RUN_ENDPOINT = ("GET", "api/2.1/jobs/runs/get")
@@ -315,6 +317,18 @@ class DatabricksHook(BaseDatabricksHook):
         }
         response = self._do_api_call(EXPORT_ENDPOINT, json)
         return response["content"]
+
+    def create_job(self, settings) -> int:
+        response = self._do_api_call(CREATE_JOB_ENDPOINT, settings)
+        return response["job_id"]
+
+    def reset_job(self, job_id, new_settings) -> int:
+        json = {
+            "job_id": job_id,
+            "new_settings": new_settings
+        }
+        response = self._do_api_call(RESET_JOB_ENDPOINT, json)
+        return response["job_id"]
 
     async def a_get_run(self, run_id: int) -> dict[str, Any]:
         """
