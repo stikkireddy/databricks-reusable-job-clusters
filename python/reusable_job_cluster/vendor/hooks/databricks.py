@@ -322,13 +322,12 @@ class DatabricksHook(BaseDatabricksHook):
         response = self._do_api_call(CREATE_JOB_ENDPOINT, settings)
         return response["job_id"]
 
-    def reset_job(self, job_id, new_settings) -> int:
+    def reset_job(self, job_id, new_settings):
         json = {
             "job_id": job_id,
             "new_settings": new_settings
         }
-        response = self._do_api_call(RESET_JOB_ENDPOINT, json)
-        return response["job_id"]
+        self._do_api_call(RESET_JOB_ENDPOINT, json)
 
     async def a_get_run(self, run_id: int) -> dict[str, Any]:
         """
