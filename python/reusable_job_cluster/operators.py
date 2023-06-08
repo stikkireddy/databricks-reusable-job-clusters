@@ -1,17 +1,14 @@
 from __future__ import annotations
 
 import base64
+import time
 from enum import Enum
 from functools import lru_cache
-
-import time
 from pathlib import Path
-
-from typing import TYPE_CHECKING, Any, Dict, Tuple, Optional
+from typing import TYPE_CHECKING, Any, Dict, Tuple
 
 from airflow import DAG
 from airflow.models import BaseOperator
-
 from reusable_job_cluster.vendor.hooks.databricks import DatabricksHook
 from reusable_job_cluster.vendor.utils.databricks import normalise_json_content
 
@@ -49,7 +46,7 @@ class DatabricksCreateReusableJobClusterOperator(BaseOperator):
     ):
         super().__init__(**kwargs)
         self.mode = mode
-        self.job_name = job_name
+        self.job_name = job_name or "infinite loop"
         self.parent_notebook_name = parent_notebook_name
         self.parent_notebook_dir_path = parent_notebook_dir_path
         self.databricks_retry_args = databricks_retry_args
@@ -65,7 +62,7 @@ class DatabricksCreateReusableJobClusterOperator(BaseOperator):
 
     def _get_job_json(self, notebook_path: str):
         return {
-            "name": self.job_name or "infinite loop",
+            "name": self.job_name,
             "webhook_notifications": {},
             "timeout_seconds": 0,
             "max_concurrent_runs": 1,
@@ -113,16 +110,15 @@ class DatabricksCreateReusableJobClusterOperator(BaseOperator):
             remote_content = self._hook.do_export_notebook(notebook_path)
             if remote_content != notebook_content:
                 self.log.info("Framework notebook content is different so re-uploading")
-                self._hook.do_import_notebook(self._ensure_notebook_path(), notebook_content)
+                self._hook.do_import_notebook(notebook_path, notebook_content)
             else:
                 self.log.info("Framework notebook content is the same so not re-uploading")
         except Exception:
-            self._hook.do_import_notebook(self._ensure_notebook_path(), notebook_content)
+            self._hook.do_import_notebook(notebook_path, notebook_content)
 
         return notebook_path
 
     @property
-    @lru_cache(maxsize=1)
     def _hook(self):
         return self._get_hook(caller="DatabricksCreateReusableJobClusterOperator")
 

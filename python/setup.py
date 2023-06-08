@@ -8,6 +8,17 @@ setup(
     description='A dummy package for demonstration purposes',
     packages=find_packages(exclude=['tests']),
     package_data={'': ['infinite_loop_notebook.template']},
+    install_requires=[
+        "aiohttp>=3.6.3, <4",
+        "requests>=2.27,<3",
+    ],
+    extras_require={
+            'dev': [
+                'pytest',
+                'pytest-cov',
+                'pytest-asyncio',
+            ]
+        },
     classifiers=[
         'Development Status :: 3 - Alpha',
         'Intended Audience :: Developers',
