@@ -63,7 +63,6 @@ notebook_task = DatabricksSubmitRunOperator(
     task_id='spark_jar_task',
     databricks_conn_id="databricks_default",
     existing_cluster_id=existing_cluster_id,
-    # "{{ task_instance.xcom_pull(task_ids='create_cluster_task', key='infinite_loop_cluster_id') }}",
     notebook_task={"notebook_path": "/Users/sri.tikkireddy@databricks.com/workflow-hack/helloworld"},
     dag=dag
 )
