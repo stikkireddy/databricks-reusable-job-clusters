@@ -38,6 +38,8 @@ from reusable_job_cluster.vendor.hooks.databricks_base import BaseDatabricksHook
 RESTART_CLUSTER_ENDPOINT = ("POST", "api/2.0/clusters/restart")
 START_CLUSTER_ENDPOINT = ("POST", "api/2.0/clusters/start")
 TERMINATE_CLUSTER_ENDPOINT = ("POST", "api/2.0/clusters/delete")
+RESIZE_CLUSTER_ENDPOINT = ("POST", "api/2.0/clusters/resize")
+CLUSTER_INFO_ENDPOINT = ("GET", "api/2.0/clusters/get")
 
 CREATE_JOB_ENDPOINT = ("POST", "api/2.1/jobs/create")
 RESET_JOB_ENDPOINT = ("POST", "api/2.1/jobs/reset")
@@ -441,6 +443,24 @@ class DatabricksHook(BaseDatabricksHook):
         :param json: json dictionary containing cluster specification.
         """
         self._do_api_call(START_CLUSTER_ENDPOINT, json)
+
+    def resize_cluster(self, json: dict) -> None:
+        """
+        Reesize the cluster.
+
+        :param json: json dictionary containing cluster specification.
+        """
+        self._do_api_call(RESIZE_CLUSTER_ENDPOINT, json)
+
+    def get_cluster_info(self, cluster_id: int) -> dict:
+        """
+        Reesize the cluster.
+
+        :param json: json dictionary containing cluster specification.
+        """
+        json = {"cluster_id": cluster_id}
+        run_output = self._do_api_call(CLUSTER_INFO_ENDPOINT, json)
+        return run_output
 
     def terminate_cluster(self, json: dict) -> None:
         """

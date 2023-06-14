@@ -11,6 +11,7 @@ from airflow import DAG
 from airflow.models import BaseOperator
 from reusable_job_cluster.vendor.hooks.databricks import DatabricksHook
 from reusable_job_cluster.vendor.utils.databricks import normalise_json_content
+from airflow.exceptions import AirflowException
 
 if TYPE_CHECKING:
     from airflow.utils.context import Context
@@ -228,6 +229,66 @@ class DatabricksDestroyReusableJobClusterOperator(BaseOperator):
     def execute(self, context: Context):
         run_id = context["ti"].xcom_pull(task_ids=self.job_create_task_id, key=XCOM_PARENT_RUN_ID_KEY)
         self._hook.cancel_run(run_id)
+
+
+class DatabricksResizeReusableJobClusterOperator(BaseOperator):
+
+    def __init__( self, 
+                 *,
+                job_create_task_id: str,
+                 databricks_conn_id: str = "databricks_default",
+                 num_workers = None,
+                max_retries = 60,
+                 **kwargs
+    ):
+        super().__init__(**kwargs)
+        self.databricks_conn_id = databricks_conn_id
+        self.num_workers = num_workers
+        self.job_create_task_id = job_create_task_id
+        self.max_retries = max_retries
+
+    @property
+    @lru_cache(maxsize=1)
+    def _hook(self):
+        return self._get_hook(caller="DatabricksResizeReusableJobClusterOperator")
+
+    def _get_hook(self, caller: str) -> DatabricksHook:
+        return DatabricksHook(
+            self.databricks_conn_id,
+            caller=caller,
+        )
+
+    def wait_for_running_state(self, cluster_id: str):
+        
+        retry_count = 0
+        while retry_count < self.max_retries:
+            cluster_info = self._hook.get_cluster_info(cluster_id)
+
+            if cluster_info["state"] == "RUNNING":
+                self.log.info(f"Cluster {cluster_id} is in running state.")
+                return True
+            
+            self.log.info(f"Cluster {cluster_id} is currently in a : {cluster_info['state']} state. Retrying in 10 seconds.")
+            retry_count += 1
+
+            time.sleep(10)
+
+        self.log.info(f"Cluster {cluster_id} failed to start in {self.max_retries * 10} seconds and is currently in a : {cluster_info['state']} state.")
+        return False
+
+    def execute(self, context: Context):
+        cluster_id = context["ti"].xcom_pull(task_ids=self.job_create_task_id, key=XCOM_INFINITE_LOOP_CLUSTER_ID)
+
+        if(self.wait_for_running_state(cluster_id)):
+            json = {
+                "cluster_id": cluster_id,
+                "num_workers": self.num_workers,
+            }
+
+            self.log.info(f"json --> : {json}")
+            self._hook.resize_cluster(json)
+        else:
+            raise AirflowException("job cluster did not transition into a running state; unable to resize.") 
 
 
 class ReuseableJobClusterBuilder:
