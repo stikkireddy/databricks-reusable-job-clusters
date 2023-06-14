@@ -267,13 +267,16 @@ class DatabricksResizeReusableJobClusterOperator(BaseOperator):
             if cluster_info["state"] == "RUNNING":
                 self.log.info(f"Cluster {cluster_id} is in running state.")
                 return True
+            else:
+                if cluster_info["state"] not in  ["PENDING", "RESIZING", "RESTARTING"]:
+                    raise AirflowException(f"Job cluster {cluster_id} is in an unacceptable state and unable to resize. Current state: {cluster_info['state']}")
             
             self.log.info(f"Cluster {cluster_id} is currently in a : {cluster_info['state']} state. Retrying in 10 seconds.")
             retry_count += 1
 
             time.sleep(10)
 
-        self.log.info(f"Cluster {cluster_id} failed to start in {self.max_retries * 10} seconds and is currently in a : {cluster_info['state']} state.")
+        self.log.info(f"Cluster {cluster_id} failed to transition to RUNNING state in {self.max_retries * 10} seconds and is currently in a : {cluster_info['state']} state.")
         return False
 
     def execute(self, context: Context):
