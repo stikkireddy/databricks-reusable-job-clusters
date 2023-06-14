@@ -8,6 +8,12 @@ setup(
     description='A package for building airflow operators to reuse Jobs Clusters',
     packages=find_packages(exclude=['tests']),
     package_data={'': ['infinite_loop_notebook.template']},
+    use_scm_version={
+        "root": "..",
+        "relative_to": __file__,
+        "local_scheme": "node-and-timestamp"
+    },
+    setup_requires=['setuptools_scm'],
     install_requires=[
         "aiohttp>=3.6.3, <4",
         "requests>=2.27,<3",
