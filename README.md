@@ -3,7 +3,7 @@
 ## Install the package
 
 ```shell
-pip install git+https://github.com/stikkireddy/databricks-reusable-job-clusters
+pip install "git+https://github.com/stikkireddy/databricks-reusable-job-clusters.git#egg=databricks-reusable-job-clusters&subdirectory=python" # install a python package from a repo subdirectory
 ```
 
 ## Example Dag Usage
