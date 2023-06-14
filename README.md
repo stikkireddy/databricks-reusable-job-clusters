@@ -1,5 +1,20 @@
 # databricks-reusable-job-clusters
 
+## Features
+
+1. Builder pattern for validating reusable cluster
+2. Default trigger rule for destroy to ALL_DONE. Aka the cluster is destroyed if any of the previous tasks fail.
+    1. You can disable this in the builder with `without_destroy_cluster_on_any_failure()`
+3. Support for disabling default timeout (developers need to conciously make this choice everytime)
+   1. `with_timeout_seconds(timeout_seconds=6000)` timeout parent job after 6000 seconds
+   2. `with_timeout_seconds(disable_timeout=True)` Disable timeout
+   3. Either of the above options must be chosen. 
+      If neither is chosen, the dag raises an error and will not be registered.
+4. Support for all 3 clouds
+
+## Best Practices
+
+
 ## Install the package
 
 ```shell

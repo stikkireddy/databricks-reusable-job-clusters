@@ -15,7 +15,7 @@ default_args = {
 }
 
 # Create the DAG object
-dag = DAG('my_test_databricks_dummy_dag', default_args=default_args, schedule_interval=timedelta(days=1))
+dag = DAG('my_test_databricks_dummy_dag', default_args=default_args, schedule_interval=None)
 
 # Define the tasks/operators in the DAG
 start_task = DummyOperator(task_id='start_task', dag=dag)
@@ -46,7 +46,7 @@ create_cluster_task, delete_cluster_task, existing_cluster_id = DatabricksReusab
     "runtime_engine": "STANDARD"
 }) \
     .with_dag(dag) \
-    .with_timeout_seconds(6000) \
+    .with_timeout_seconds(timeout_seconds=6000) \
     .with_task_prefix(task_prefix="reusable_cluster") \
     .build_operators()
 
