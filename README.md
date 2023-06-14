@@ -100,4 +100,4 @@ docker compose up --build
 4. Open airflow http://localhost:8088 and login with username: `airflow` and password: `airflow`
 
 
-5. Add the databricks connection configuration in the admin console 
+5. Add the databricks connection configuration in the admin console
