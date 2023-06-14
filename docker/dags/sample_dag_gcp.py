@@ -30,7 +30,6 @@ create_cluster_task, delete_cluster_task, existing_cluster_id = DatabricksReusab
             "min_workers": 2,
             "max_workers": 8
         },
-        "cluster_name": "Juan Lamadrid's Cluster",
         "spark_version": "12.2.x-scala2.12",
         "spark_conf": {},
         "gcp_attributes": {
@@ -49,7 +48,6 @@ create_cluster_task, delete_cluster_task, existing_cluster_id = DatabricksReusab
         "autotermination_minutes": 120,
         "cluster_source": "UI",
         "init_scripts": [],
-        "single_user_name": "juan.lamadrid@databricks.com",
         "data_security_mode": "SINGLE_USER",
         "runtime_engine": "STANDARD"
     }) \

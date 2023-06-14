@@ -30,7 +30,6 @@ create_cluster_task, delete_cluster_task, existing_cluster_id = DatabricksReusab
             "min_workers": 2,
             "max_workers": 8
         },
-        "cluster_name": "juans-cluster",
         "spark_version": "12.2.x-scala2.12",
         "spark_conf": {},
         "aws_attributes": {
