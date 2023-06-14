@@ -5,10 +5,12 @@ import time
 from enum import Enum
 from functools import lru_cache
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, Tuple
+from typing import TYPE_CHECKING, Any, Dict, Tuple, Optional
 
 from airflow import DAG
 from airflow.models import BaseOperator
+from airflow.utils.trigger_rule import TriggerRule
+
 from reusable_job_cluster.vendor.hooks.databricks import DatabricksHook
 from reusable_job_cluster.vendor.utils.databricks import normalise_json_content
 
@@ -36,7 +38,7 @@ class DatabricksCreateReusableJobClusterOperator(BaseOperator):
             parent_notebook_dir_path: str | None = None,
             parent_notebook_name: str | None = None,
             notebook_path: str | None = None,
-            timeout_seconds: int = 600,
+            timeout_seconds: Optional[int] = 600,
             databricks_conn_id: str = "databricks_default",
             databricks_retry_limit: int = 3,
             databricks_retry_delay: int = 1,
@@ -61,10 +63,9 @@ class DatabricksCreateReusableJobClusterOperator(BaseOperator):
         self.cluster_id = None
 
     def _get_job_json(self, notebook_path: str):
-        return {
+        job_config = {
             "name": self.job_name,
             "webhook_notifications": {},
-            "timeout_seconds": 0,
             "max_concurrent_runs": 1,
             "tasks": [
                 {
@@ -75,12 +76,14 @@ class DatabricksCreateReusableJobClusterOperator(BaseOperator):
                         "source": "WORKSPACE"
                     },
                     "new_cluster": self.new_cluster,
-                    "timeout_seconds": self.timeout_seconds,
                     "email_notifications": {}
                 }
             ],
             "format": "MULTI_TASK"
         }
+        if self.timeout_seconds is not None:
+            job_config["timeout_seconds"] = self.timeout_seconds
+        return job_config
 
     @lru_cache(maxsize=1)
     def _get_notebook_base64(self):
@@ -266,8 +269,12 @@ class ReuseableJobClusterBuilder:
         self._job_cluster.notebook_path = notebook_path
         return self
 
-    def with_timeout_seconds(self, timeout_seconds: int):
+    def with_timeout_seconds(self, timeout_seconds: Optional[int]):
         self._job_cluster.timeout_seconds = timeout_seconds
+        return self
+
+    def without_destroy_cluster_on_any_failure(self):
+        self._job_cluster.destroy_cluster_on_failure = False
         return self
 
     def with_databricks_conn_id(self, databricks_conn_id: str):
@@ -316,6 +323,7 @@ class DatabricksReusableJobCluster:
                  *,
                  task_prefix: str | None = None,
                  timeout_seconds: int | None = None,
+                 destroy_cluster_on_failure: bool = True,
                  job_prefix: str | None = None,
                  job_suffix: str | None = None,
                  mode: ReusableClusterMode = ReusableClusterMode.SUBMIT_RUN,
@@ -331,6 +339,7 @@ class DatabricksReusableJobCluster:
                  do_xcom_push: bool = True,
                  create_op_kwargs: dict[Any, Any] | None = None,
                  delete_op_kwargs: dict[Any, Any] | None = None, ):
+        self.destroy_cluster_on_failure = destroy_cluster_on_failure
         self.mode = mode
         self.job_suffix = job_suffix
         self.job_prefix = job_prefix
@@ -362,9 +371,6 @@ class DatabricksReusableJobCluster:
             validation_errors.append("new_cluster cannot be None; use with_new_cluster() to set new_cluster")
         if self.task_prefix is None:
             validation_errors.append("task_prefix cannot be None; use with_task_prefix() to set task_prefix")
-        if self.timeout_seconds is None:
-            validation_errors.append(
-                "timeout_seconds cannot be None; use with_timeout_seconds() to set timeout_seconds")
 
         # This check is there to avoid creating too many duplicate jobs for just one airflow dag
         if self.dag is not None and self.mode == ReusableClusterMode.RUN_NOW:
@@ -379,7 +385,13 @@ class DatabricksReusableJobCluster:
 
     def to_dict(self):
         payload = self.__dict__.copy()
-        pop_fields = ["delete_op_kwargs", "create_op_kwargs", "dag", "task_prefix", "job_suffix", "job_prefix"]
+        pop_fields = ["delete_op_kwargs",
+                      "create_op_kwargs",
+                      "dag",
+                      "destroy_cluster_on_failure",
+                      "task_prefix",
+                      "job_suffix",
+                      "job_prefix"]
         for field in pop_fields:
             payload.pop(field, None)
         return payload
@@ -410,6 +422,10 @@ class DatabricksReusableJobCluster:
 
     def to_destroy_operator(self) -> DatabricksDestroyReusableJobClusterOperator:
         # hard coded values for now since the list of args are very small
+        additional_kwargs = {}
+        if self.destroy_cluster_on_failure is True:
+            additional_kwargs["trigger_rule"] = TriggerRule.ALL_DONE
+
         return DatabricksDestroyReusableJobClusterOperator(
             dag=self.dag,
             task_id=f"{self.task_prefix}_destroy",
@@ -418,5 +434,6 @@ class DatabricksReusableJobCluster:
             databricks_retry_limit=self.databricks_retry_limit,
             databricks_retry_delay=self.databricks_retry_delay,
             databricks_retry_args=self.databricks_retry_args,
+            **additional_kwargs,
             **self.delete_op_kwargs
         )
