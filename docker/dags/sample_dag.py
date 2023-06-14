@@ -23,27 +23,31 @@ start_task = DummyOperator(task_id='start_task', dag=dag)
 create_cluster_task, delete_cluster_task, existing_cluster_id = DatabricksReusableJobCluster \
     .builder() \
     .with_new_cluster({
-        "spark_version": "12.2.x-scala2.12",
-        "aws_attributes": {
-            "first_on_demand": 1,
-            "availability": "SPOT_WITH_FALLBACK",
-            "zone_id": "us-west-2a",
-            "spot_bid_price_percent": 100,
-            "ebs_volume_count": 0
-        },
-        "node_type_id": "i3.xlarge",
-        "spark_env_vars": {
-            "PYSPARK_PYTHON": "/databricks/python3/bin/python3"
-        },
-        "enable_elastic_disk": False,
-        "data_security_mode": "SINGLE_USER",
-        "runtime_engine": "STANDARD",
-        "num_workers": 8
-    }) \
+    "autoscale": {
+        "min_workers": 2,
+        "max_workers": 8
+    },
+    "spark_version": "12.2.x-scala2.12",
+    "spark_conf": {},
+    "gcp_attributes": {
+        "use_preemptible_executors": False,
+        "availability": "ON_DEMAND_GCP",
+        "zone_id": "HA"
+    },
+    "node_type_id": "n2-highmem-4",
+    "ssh_public_keys": [],
+    "custom_tags": {},
+    "spark_env_vars": {
+        "PYSPARK_PYTHON": "/databricks/python3/bin/python3"
+    },
+    "init_scripts": [],
+    "single_user_name": "sri.tikkireddy@databricks.com",
+    "data_security_mode": "SINGLE_USER",
+    "runtime_engine": "STANDARD"
+}) \
     .with_dag(dag) \
     .with_timeout_seconds(6000) \
     .with_task_prefix(task_prefix="reusable_cluster") \
-    .with_run_now_mode() \
     .build_operators()
 
 notebook_task = DatabricksSubmitRunOperator(

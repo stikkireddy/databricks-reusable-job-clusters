@@ -300,8 +300,8 @@ class ReuseableJobClusterBuilder:
         return self
 
     def build_operators(self) -> Tuple[
-            DatabricksCreateReusableJobClusterOperator,
-            DatabricksDestroyReusableJobClusterOperator, str]:
+        DatabricksCreateReusableJobClusterOperator,
+        DatabricksDestroyReusableJobClusterOperator, str]:
         self._job_cluster.validate()
         return (
             self._job_cluster.to_create_operator(),
@@ -409,9 +409,14 @@ class DatabricksReusableJobCluster:
             **self.create_op_kwargs)
 
     def to_destroy_operator(self) -> DatabricksDestroyReusableJobClusterOperator:
+        # hard coded values for now since the list of args are very small
         return DatabricksDestroyReusableJobClusterOperator(
             dag=self.dag,
             task_id=f"{self.task_prefix}_destroy",
             job_create_task_id=self.create_task_id,
+            databricks_conn_id=self.databricks_conn_id,
+            databricks_retry_limit=self.databricks_retry_limit,
+            databricks_retry_delay=self.databricks_retry_delay,
+            databricks_retry_args=self.databricks_retry_args,
             **self.delete_op_kwargs
         )
