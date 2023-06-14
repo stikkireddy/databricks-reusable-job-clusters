@@ -115,3 +115,7 @@ docker compose up --build
 
 
 5. Add the databricks connection configuration in the admin console
+
+## Disclaimer
+databricks-reusable-job-clusters is not developed, endorsed not supported by Databricks. 
+It is provided as-is; no warranty is derived from using this package. For more details, please refer to the license.
