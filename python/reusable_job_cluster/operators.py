@@ -238,6 +238,7 @@ class DatabricksResizeReusableJobClusterOperator(BaseOperator):
                 job_create_task_id: str,
                  databricks_conn_id: str = "databricks_default",
                  num_workers = None,
+                autoscale_args: dict[Any, Any] | None = None,
                 max_retries = 60,
                  **kwargs
     ):
@@ -246,6 +247,13 @@ class DatabricksResizeReusableJobClusterOperator(BaseOperator):
         self.num_workers = num_workers
         self.job_create_task_id = job_create_task_id
         self.max_retries = max_retries
+        self.autoscale_args = autoscale_args
+
+        if num_workers is not None and autoscale_args is not None:
+            raise AirflowException(f"Both num_workers ({num_workers}) and autoscale_args ({autoscale_args}) cannot be provided at the same time.")
+        else:
+            self.num_workers = num_workers
+            self.autoscale_args = autoscale_args
 
     @property
     @lru_cache(maxsize=1)
@@ -281,12 +289,18 @@ class DatabricksResizeReusableJobClusterOperator(BaseOperator):
 
     def execute(self, context: Context):
         cluster_id = context["ti"].xcom_pull(task_ids=self.job_create_task_id, key=XCOM_INFINITE_LOOP_CLUSTER_ID)
-
-        if(self.wait_for_running_state(cluster_id)):
-            json = {
-                "cluster_id": cluster_id,
-                "num_workers": self.num_workers,
-            }
+        
+        if self.wait_for_running_state(cluster_id):
+            if self.num_workers is not None:
+                json = {
+                    "cluster_id": cluster_id,
+                    "num_workers": self.num_workers,
+                }
+            else:
+                json = {
+                    "cluster_id": cluster_id,
+                    "autoscale": self.autoscale_args,
+                }
 
             self.log.info(f"json --> : {json}")
             self._hook.resize_cluster(json)

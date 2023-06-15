@@ -73,7 +73,11 @@ cluster_resize_task = DatabricksResizeReusableJobClusterOperator(
     task_id='cluster_resize_task',
     job_create_task_id=create_cluster_task.task_id,
     databricks_conn_id="databricks_azure",
-    num_workers=2,
+    # num_workers=2,
+    autoscale_args = {
+        "min_workers": 2,
+        "max_workers": 4
+    },
     max_retries=60, # retries occur every 10 seconds; 60 retries = 10 minutes
     dag=dag
 )
