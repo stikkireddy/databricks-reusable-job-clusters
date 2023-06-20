@@ -7,18 +7,37 @@
     1. You can disable this in the builder with `without_destroy_cluster_on_any_failure()`
 3. Support for disabling default timeout (developers need to conciously make this choice everytime)
    1. `with_timeout_seconds(timeout_seconds=6000)` timeout parent job after 6000 seconds
-   2. `with_timeout_seconds(disable_timeout=True)` Disable timeout
+   2. `with_timeout_seconds(None)` Disable timeout
    3. Either of the above options must be chosen. 
       If neither is chosen, the dag raises an error and will not be registered.
 4. Support for all 3 clouds
+5. Use `.build_operators(autowire=True)` to automatically add the dependencies to the DatabricksSubmitRunOperator
+   1. Note there may be additional dependencies drawn to guarantee correctness 
 
 ## Best Practices
 
+1. Use the builder to create the operators and existing cluster id
+2. Use the autowire option to automatically add the dependencies to the DatabricksSubmitRunOperator
+   1. Look at docker/dags/sample_dag.py for an example of no auto wiring
+   2. Look at docker/dags/sample_dag_autowire.py for an example of auto wiring
+3. Try to use delta cache accelerated clusters for performance and caching
+4. Make sure you specify:
+   1. Tags `with_tags(...)`
+   2. Permissions (visibility of runs for various users) `with_view_permissions(...)` or `with_manage_permissions(...)`
+   3. Timeout Seconds (cost savings) `with_timeout_seconds(...)`
 
 ## Install the package
 
 ```shell
 pip install "git+https://github.com/stikkireddy/databricks-reusable-job-clusters.git#egg=databricks-reusable-job-clusters&subdirectory=python" # install a python package from a repo subdirectory
+```
+
+### Install a specific version
+
+Install version 0.1.0
+
+```shell
+pip install "git+https://github.com/stikkireddy/databricks-reusable-job-clusters.git@0.1.0#egg=databricks-reusable-job-clusters&subdirectory=python" # install a python package from a repo subdirectory
 ```
 
 ## Example Dag Usage

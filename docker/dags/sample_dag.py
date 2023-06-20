@@ -20,44 +20,7 @@ dag = DAG('my_test_databricks_dummy_dag', default_args=default_args, schedule_in
 # Define the tasks/operators in the DAG
 start_task = DummyOperator(task_id='start_task', dag=dag)
 
-
-notebook_task = DatabricksSubmitRunOperator(
-    task_id='spark_jar_task',
-    databricks_conn_id="databricks_default",
-    # existing_cluster_id=existing_cluster_id,
-    # "{{ task_instance.xcom_pull(task_ids='create_cluster_task', key='infinite_loop_cluster_id') }}",
-    notebook_task={"notebook_path": "/Users/sri.tikkireddy@databricks.com/workflow-hack/helloworld"},
-    dag=dag
-)
-
-notebook_task2 = DatabricksSubmitRunOperator(
-    task_id='spark_jar_task2',
-    databricks_conn_id="databricks_default",
-    # existing_cluster_id=existing_cluster_id,
-    # "{{ task_instance.xcom_pull(task_ids='create_cluster_task', key='infinite_loop_cluster_id') }}",
-    notebook_task={"notebook_path": "/Users/sri.tikkireddy@databricks.com/workflow-hack/helloworld"},
-    dag=dag
-)
-
-notebook_task3 = DatabricksSubmitRunOperator(
-    task_id='spark_jar_task3',
-    databricks_conn_id="databricks_default",
-    # existing_cluster_id=existing_cluster_id,
-    # "{{ task_instance.xcom_pull(task_ids='create_cluster_task', key='infinite_loop_cluster_id') }}",
-    notebook_task={"notebook_path": "/Users/sri.tikkireddy@databricks.com/workflow-hack/helloworld"},
-    dag=dag
-)
-
-dummy_task_1 = DummyOperator(task_id='dummy_task_1', dag=dag)
-dummy_task_2 = DummyOperator(task_id='dummy_task_2', dag=dag)
-end_task = DummyOperator(task_id='end_task', dag=dag)
-
-# Set up the task dependencies
-start_task >> notebook_task >> dummy_task_1 >> notebook_task2 >> dummy_task_2 >> end_task
-notebook_task3 >> dummy_task_1
-
-# create_cluster_task, delete_cluster_task, existing_cluster_id = \
-DatabricksReusableJobCluster \
+create_cluster_task, delete_cluster_task, existing_cluster_id = DatabricksReusableJobCluster \
     .builder() \
     .with_new_cluster({
     "autoscale": {
@@ -84,9 +47,41 @@ DatabricksReusableJobCluster \
     .with_dag(dag) \
     .with_timeout_seconds(6000) \
     .with_tags(tags={
-        "example": "test"
-    }) \
+    "example": "test"
+}) \
     .with_task_prefix(task_prefix="reusable_cluster") \
     .with_manage_permissions(user_names="max.wittenberg@databricks.com") \
-    .build_operators(autowire=True,
-                     create_op_parent_task_list=start_task)
+    .build_operators()
+
+notebook_task = DatabricksSubmitRunOperator(
+    task_id='spark_jar_task',
+    databricks_conn_id="databricks_default",
+    existing_cluster_id=existing_cluster_id,
+    notebook_task={"notebook_path": "/Users/sri.tikkireddy@databricks.com/workflow-hack/helloworld"},
+    dag=dag
+)
+
+notebook_task2 = DatabricksSubmitRunOperator(
+    task_id='spark_jar_task2',
+    databricks_conn_id="databricks_default",
+    existing_cluster_id=existing_cluster_id,
+    notebook_task={"notebook_path": "/Users/sri.tikkireddy@databricks.com/workflow-hack/helloworld"},
+    dag=dag
+)
+
+notebook_task3 = DatabricksSubmitRunOperator(
+    task_id='spark_jar_task3',
+    databricks_conn_id="databricks_default",
+    existing_cluster_id=existing_cluster_id,
+    notebook_task={"notebook_path": "/Users/sri.tikkireddy@databricks.com/workflow-hack/helloworld"},
+    dag=dag
+)
+
+dummy_task_1 = DummyOperator(task_id='dummy_task_1', dag=dag)
+dummy_task_2 = DummyOperator(task_id='dummy_task_2', dag=dag)
+end_task = DummyOperator(task_id='end_task', dag=dag)
+
+# Set up the task dependencies
+start_task >> create_cluster_task >> notebook_task >> dummy_task_1 >> notebook_task2 >> dummy_task_2 >> end_task
+create_cluster_task >> notebook_task3 >> dummy_task_1
+notebook_task2 >> delete_cluster_task
