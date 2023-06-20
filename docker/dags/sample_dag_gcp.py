@@ -52,6 +52,9 @@ create_cluster_task, delete_cluster_task, existing_cluster_id = DatabricksReusab
         "runtime_engine": "STANDARD"
     }) \
     .with_dag(dag) \
+    .with_tags(tags={
+        "example": "test"
+    }) \
     .with_databricks_conn_id("databricks_gcp") \
     .with_timeout_seconds(6000) \
     .with_task_prefix(task_prefix="reusable_cluster") \

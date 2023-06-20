@@ -83,6 +83,7 @@ def get_default_ops():
                                            .with_run_now_mode()
                                            .with_parent_notebook_dir_path(NOTEBOOK_DIR_PATH)
                                            .with_parent_notebook_name(NOTEBOOK_NAME)
+                                           .with_tags({"tag1": "value1"})
                                            .build_operators()
                                            )
 
@@ -247,7 +248,6 @@ class TestDatabricksReusableJobCluster:
     def test_builder_execute_create(self, db_hook_mock):
         create, delete, existing_cluster_id = get_default_ops()
         db_api_mock = db_hook_mock.return_value
-        db_api_mock = db_hook_mock.return_value
         db_api_mock.do_mkdirs.return_value = None
         db_api_mock.do_export_notebook.return_value = create._get_notebook_base64()
         job_id = 678
@@ -261,6 +261,9 @@ class TestDatabricksReusableJobCluster:
                 "cluster_id": cluster_id
             }
         }]}
+        email = "example@domain.com"
+        # mock get user for tags
+        db_api_mock.get_current_user.return_value = {"userName": email}
         ti_mock = mock.MagicMock()
         ti_mock.xcom_push.return_value = None
         create.execute({"ti": ti_mock})
