@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import base64
+import re
 import time
 from enum import Enum
 from functools import lru_cache
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, Tuple, Optional
+from typing import TYPE_CHECKING, Any, Dict, Tuple, Optional, List
 
+import networkx as nx
 from airflow import DAG
 from airflow.models import BaseOperator
 from airflow.utils.trigger_rule import TriggerRule
@@ -26,6 +28,17 @@ class ReusableClusterMode(Enum):
     RUN_NOW = "run_now"
 
 
+def convert_non_alphanumeric_to_underscore(text):
+    pattern = r'[^a-zA-Z0-9]+'
+    converted_text = re.sub(pattern, '_', text)
+    return converted_text.strip('_')
+
+
+def convert_email_to_underscore(text):
+    first_part = text.split('@')[0]
+    return first_part.replace(".", "_")
+
+
 class DatabricksCreateReusableJobClusterOperator(BaseOperator):
 
     def __init__(
@@ -35,6 +48,8 @@ class DatabricksCreateReusableJobClusterOperator(BaseOperator):
             # json: Any | None = None,
             job_name: str | None = None,
             mode: ReusableClusterMode = ReusableClusterMode.SUBMIT_RUN,
+            tags: Optional[Dict[str, str]] = None,
+            access_control_list: Optional[List[Dict[str, str]]] = None,
             parent_notebook_dir_path: str | None = None,
             parent_notebook_name: str | None = None,
             notebook_path: str | None = None,
@@ -47,6 +62,8 @@ class DatabricksCreateReusableJobClusterOperator(BaseOperator):
             **kwargs,
     ):
         super().__init__(**kwargs)
+        self.access_control_list = access_control_list
+        self.tags = tags or {}  # default tags is None
         self.mode = mode
         self.job_name = job_name or "infinite loop"
         self.parent_notebook_name = parent_notebook_name
@@ -83,6 +100,9 @@ class DatabricksCreateReusableJobClusterOperator(BaseOperator):
         }
         if self.timeout_seconds is not None:
             job_config["timeout_seconds"] = self.timeout_seconds
+        if self.access_control_list is not None and len(self.access_control_list) > 0:
+            # access_control_list length must be greater than 0
+            job_config["access_control_list"] = self.access_control_list
         return job_config
 
     @lru_cache(maxsize=1)
@@ -152,16 +172,19 @@ class DatabricksCreateReusableJobClusterOperator(BaseOperator):
 
     def _default_tags(self):
         return {
-            "dag_id": self.dag_id,
+            "dag_id": convert_non_alphanumeric_to_underscore(self.dag_id),
             "created_for": "airflow",
-            "created_by": self._hook.get_current_user()["userName"],
+            "created_by": convert_email_to_underscore(self._hook.get_current_user()["userName"]),
             "purpose": "reusable_job_cluster",
         }
+
+    def get_normalized_tags(self, json_normalised: Dict[str, Any]):
+        return {**(json_normalised.get("tags", {})), **self._default_tags(), **self.tags}
 
     def execute_in_run_now_mode(self, json_normalised):
         job_id = self._hook.find_job_id_by_name(self.job_name)
         # populate some default tags
-        json_normalised["tags"] = {**(json_normalised.get("tags", {})), **self._default_tags()}
+        json_normalised["tags"] = self.get_normalized_tags(json_normalised)
         if job_id is None:
             job_id = self._hook.create_job(json_normalised)
         else:
@@ -175,9 +198,16 @@ class DatabricksCreateReusableJobClusterOperator(BaseOperator):
 
     def execute(self, context: Context):
         self.log.info("Started Execute in mode: %s", self.mode)
+        # modify tags the moment execute kicks off
+        self.new_cluster["custom_tags"] = {
+            **self._default_tags(),
+            **self.tags,
+            **(self.new_cluster.get("custom_tags", {}))
+        }
         notebook_path = self._make_notebook_if_not_exists() if self.notebook_path is None else self.notebook_path
         json_normalised = normalise_json_content(self._get_job_json(notebook_path))
         if self.mode == ReusableClusterMode.SUBMIT_RUN:
+            # add custom tags to the job during submit run
             self.execute_in_submit_run_mode(json_normalised)
         if self.mode == ReusableClusterMode.RUN_NOW:
             self.execute_in_run_now_mode(json_normalised)
@@ -230,7 +260,26 @@ class DatabricksDestroyReusableJobClusterOperator(BaseOperator):
 
     def execute(self, context: Context):
         run_id = context["ti"].xcom_pull(task_ids=self.job_create_task_id, key=XCOM_PARENT_RUN_ID_KEY)
+        if run_id is None:
+            self.log.info("Unable to find run_id in XCOM so succeeding!")
+            return
         self._hook.cancel_run(run_id)
+
+
+def convert_to_list_if_string(value: Optional[str | List[str]]) -> List[str]:
+    """
+    Converts a string value to a list containing that value if it is a string.
+    If the value is already a list, it is returned as is.
+    """
+    if value is None:
+        return []
+
+    if isinstance(value, str):
+        return [value]
+    elif isinstance(value, list):
+        return value
+
+    return []
 
 
 class ReuseableJobClusterBuilder:
@@ -240,6 +289,41 @@ class ReuseableJobClusterBuilder:
     def with_new_cluster(self, new_cluster: Dict[str, Any]):
         self._job_cluster.new_cluster = new_cluster
         return self
+
+    def with_tags(self, tags: Dict[str, Any]):
+        self._job_cluster.tags = tags
+        return self
+
+    def _with_permissions(self, permission_level: str, *,
+                          user_names: Optional[List[str]] = None,
+                          group_names: Optional[List[str]] = None,
+                          service_principal_names: Optional[List[str]] = None):
+        acls = []
+        users = convert_to_list_if_string(user_names)
+        for user in users:
+            acls.append({"user_name": user, "permission_level": permission_level})
+        groups = convert_to_list_if_string(group_names)
+        for group in groups:
+            acls.append({"group_name": group, "permission_level": permission_level})
+        service_principals = convert_to_list_if_string(service_principal_names)
+        for service_principal in service_principals:
+            acls.append({"service_principal_name": service_principal, "permission_level": permission_level})
+        self._job_cluster.access_control_list += acls
+        return self
+
+    def with_view_permissions(self, *,
+                              user_names: Optional[List[str]] = None,
+                              group_names: Optional[List[str]] = None,
+                              service_principal_names: Optional[List[str]] = None):
+        return self._with_permissions("CAN_VIEW", user_names=user_names, group_names=group_names,
+                                      service_principal_names=service_principal_names)
+
+    def with_manage_permissions(self, *,
+                                user_names: Optional[List[str]] = None,
+                                group_names: Optional[List[str]] = None,
+                                service_principal_names: Optional[List[str]] = None):
+        return self._with_permissions("CAN_MANAGE", user_names=user_names, group_names=group_names,
+                                      service_principal_names=service_principal_names)
 
     def with_dag(self, dag: DAG):
         self._job_cluster.dag = dag
@@ -306,26 +390,95 @@ class ReuseableJobClusterBuilder:
         self._job_cluster.mode = ReusableClusterMode.RUN_NOW
         return self
 
-    def build_operators(self) -> Tuple[
-        DatabricksCreateReusableJobClusterOperator,
-        DatabricksDestroyReusableJobClusterOperator, str]:
+    def build_operators(self, autowire: bool = False,
+                        destroy_only_when_all_done: bool = True,
+                        create_op_parent_task_list: Optional[
+                            str | List[str] | BaseOperator | List[BaseOperator]] = None) -> \
+            Tuple[
+                DatabricksCreateReusableJobClusterOperator,
+                DatabricksDestroyReusableJobClusterOperator, str]:
         self._job_cluster.validate()
-        return (
-            self._job_cluster.to_create_operator(),
-            self._job_cluster.to_destroy_operator(),
-            self._job_cluster.existing_cluster_id()
-        )
+        if autowire is True:
+            create_op = self._job_cluster.to_create_operator()
+            destroy_op = self._job_cluster.to_destroy_operator()
+            create_op_upstream_tasks, destroy_op_downstream_tasks = \
+                self.autowire(self._job_cluster.dag, self._job_cluster.existing_cluster_id(),
+                              create_op.task_id, destroy_op.task_id, destroy_only_when_all_done)
+            for task in create_op_upstream_tasks:
+                create_op >> self._job_cluster.dag.get_task(task)
+            for task in destroy_op_downstream_tasks:
+                self._job_cluster.dag.get_task(task) >> destroy_op
+            if create_op_parent_task_list is not None:
+                parent_task_list = create_op_parent_task_list if isinstance(create_op_parent_task_list, list) \
+                    else [create_op_parent_task_list]
+                for parent_task in parent_task_list:
+                    if isinstance(parent_task, str):
+                        self._job_cluster.dag.get_task(parent_task) >> create_op
+                    elif isinstance(parent_task, BaseOperator):
+                        parent_task >> create_op
+        else:
+            return (
+                self._job_cluster.to_create_operator(),
+                self._job_cluster.to_destroy_operator(),
+                self._job_cluster.existing_cluster_id()
+            )
+
+    def modify_databricks_run_submit_task(self, task: "DatabricksSubmitRunOperator", existing_cluster_id: str):
+        task.existing_cluster_id = existing_cluster_id
+        task.json["existing_cluster_id"] = existing_cluster_id
+        task.json.pop("new_cluster", None)
+
+    def autowire(self, dag: DAG, existing_cluster_id: str, create_op_name, destroy_op_name, destroy_only_when_all_done):
+        graph = nx.DiGraph()
+        graph.add_node("root")  # dummy root node
+        graph.add_node(create_op_name)
+        graph.add_node(destroy_op_name)
+        for task in dag.tasks:
+            graph.add_node(task.task_id, klass=task.operator_class)
+            graph.add_edge(task.task_id, "root", )  # all tasks are downstream of root
+            if task.operator_class.__name__ == "DatabricksSubmitRunOperator":
+                graph.add_edge(task.task_id, create_op_name)  # all Submit Runs are upstream of create op
+                graph.add_edge(destroy_op_name, task.task_id)  # all Submit Runs are downstream of destroy op
+                self.modify_databricks_run_submit_task(task, existing_cluster_id)
+        for task in dag.tasks:
+            for task_id in task.upstream_task_ids:
+                graph.add_edge(task.task_id, task_id)
+
+        # transitive reduction to simplify graph
+        if destroy_only_when_all_done is True:
+            # connect to everything for destroy and then simplify for create
+            destroy_list = list(graph.successors(destroy_op_name))
+            graph = nx.transitive_reduction(graph)
+        else:
+            graph = nx.transitive_reduction(graph)
+            # simplify for everything and there may be straggler tasks that are not connected to destroy
+            destroy_list = list(graph.successors(destroy_op_name))
+
+        create_list = list(graph.predecessors(create_op_name))
+
+        if "root" in create_list:
+            create_list.remove("root")  # remove dummy root node
+
+        if "root" in destroy_list:
+            destroy_list.remove("root")  # remove dummy root node
+
+        # first item is a list of task ids that should be upstream of the create op
+        # second item is a list of task ids that should be downstream of the destroy op
+        # this allows the dag to look very clean and simple to read
+        return create_list, destroy_list
 
 
 class DatabricksReusableJobCluster:
 
     def __init__(self,
                  *,
+                 access_control_list: List[dict[str, str]] | None = None,
                  task_prefix: str | None = None,
-                 timeout_seconds: int | None = None,
+                 timeout_seconds: int | None = -999,    # -999 means the value is unset
                  destroy_cluster_on_failure: bool = True,
                  job_prefix: str | None = None,
                  job_suffix: str | None = None,
+                 tags: Dict[str, str] | None = None,
                  mode: ReusableClusterMode = ReusableClusterMode.SUBMIT_RUN,
                  dag: DAG | None = None,
                  new_cluster: dict[str, Any] | None = None,
@@ -339,6 +492,8 @@ class DatabricksReusableJobCluster:
                  do_xcom_push: bool = True,
                  create_op_kwargs: dict[Any, Any] | None = None,
                  delete_op_kwargs: dict[Any, Any] | None = None, ):
+        self.access_control_list = access_control_list or []
+        self.tags = tags
         self.destroy_cluster_on_failure = destroy_cluster_on_failure
         self.mode = mode
         self.job_suffix = job_suffix
@@ -362,6 +517,33 @@ class DatabricksReusableJobCluster:
     def builder():
         return ReuseableJobClusterBuilder()
 
+    def check_duplicate_principals(self):
+        encountered_users = set()
+        encountered_groups = set()
+        encountered_service_principals = set()
+        errors = []
+
+        for acl in self.access_control_list:
+            user_name = acl.get('user_name')
+            group_name = acl.get('group_name')
+            service_principal_name = acl.get('service_principal_name')
+
+            if user_name:
+                if user_name in encountered_users:
+                    errors.append(f"Duplicate user principal: {user_name}; acl: {acl}")
+                encountered_users.add(user_name)
+
+            if group_name:
+                if group_name in encountered_groups:
+                    errors.append(f"Duplicate group principal: {group_name}; acl: {acl}")
+                encountered_groups.add(group_name)
+
+            if service_principal_name:
+                if service_principal_name in encountered_service_principals:
+                    errors.append(f"Duplicate service principal: {service_principal_name}; acl: {acl}")
+                encountered_service_principals.add(service_principal_name)
+        return errors
+
     def validate(self):
         validation_errors = []
 
@@ -371,6 +553,14 @@ class DatabricksReusableJobCluster:
             validation_errors.append("new_cluster cannot be None; use with_new_cluster() to set new_cluster")
         if self.task_prefix is None:
             validation_errors.append("task_prefix cannot be None; use with_task_prefix() to set task_prefix")
+        if self.tags is None:
+            validation_errors.append("tags cannot be None; use with_tags() to set tags; tags are important "
+                                     "for cost attribution")
+        if self.timeout_seconds == -999:
+            validation_errors.append("timeout_seconds cannot be unset; "
+                                     "use with_timeout_seconds() to set timeout_seconds; "
+                                     "it helps avoid unnecessary cost during task failures")
+        validation_errors += self.check_duplicate_principals()
 
         # This check is there to avoid creating too many duplicate jobs for just one airflow dag
         if self.dag is not None and self.mode == ReusableClusterMode.RUN_NOW:

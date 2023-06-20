@@ -15,7 +15,8 @@ setup(
     setup_requires=['setuptools_scm'],
     install_requires=[
         "aiohttp>=3.6.3, <4",
-        "requests>=2.27,<3",
+        "requests>=2.27, <3",
+        "networkx>=2.6.1, <3"
     ],
     license_files=('LICENSE',),
     extras_require={
