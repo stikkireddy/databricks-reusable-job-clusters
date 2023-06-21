@@ -26,13 +26,21 @@
    2. Permissions (visibility of runs for various users) `with_view_permissions(...)` or `with_manage_permissions(...)`
    3. Timeout Seconds (cost savings) `with_timeout_seconds(...)`
 
-## Install the package
+## Install the latest version of the package
 
 ```shell
 pip install "git+https://github.com/stikkireddy/databricks-reusable-job-clusters.git#egg=databricks-reusable-job-clusters&subdirectory=python" # install a python package from a repo subdirectory
 ```
 
-### Install a specific version
+#### Read [changelog]((CHANGELOG.md)) for more details.
+
+### Install a specific version of the package
+
+Install version 0.1.1
+
+```shell
+pip install "git+https://github.com/stikkireddy/databricks-reusable-job-clusters.git@0.1.1#egg=databricks-reusable-job-clusters&subdirectory=python" # install a python package from a repo subdirectory
+```
 
 Install version 0.1.0
 
