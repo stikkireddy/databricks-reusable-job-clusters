@@ -5,6 +5,7 @@ from datetime import datetime
 from unittest import mock
 from unittest.mock import MagicMock, call
 
+import pytest
 from airflow.models import DAG
 from reusable_job_cluster.operators import (
     DatabricksReusableJobCluster, XCOM_PARENT_RUN_ID_KEY, XCOM_INFINITE_LOOP_CLUSTER_ID
@@ -68,26 +69,36 @@ def make_run_with_state_mock(
         }
     )
 
+
 NOTEBOOK_DIR_PATH = "somepath"
 NOTEBOOK_NAME = "parent_notebook_name"
+
 
 @functools.lru_cache(maxsize=1)
 def get_default_ops():
     dag = DAG(dag_id="some_dag", start_date=datetime(2017, 1, 1))
 
     return (DatabricksReusableJobCluster.builder()
-                                           .with_new_cluster(NEW_CLUSTER)
-                                           .with_dag(dag)
-                                           .with_timeout_seconds(6000)
-                                           .with_task_prefix(task_prefix="reusable_cluster")
-                                           .with_run_now_mode()
-                                           .with_parent_notebook_dir_path(NOTEBOOK_DIR_PATH)
-                                           .with_parent_notebook_name(NOTEBOOK_NAME)
-                                           .with_tags({"tag1": "value1"})
-                                           .build_operators()
-                                           )
+            .with_new_cluster(NEW_CLUSTER)
+            .with_dag(dag)
+            .with_timeout_seconds(6000)
+            .with_task_prefix(task_prefix="reusable_cluster")
+            .with_run_now_mode()
+            .with_parent_notebook_dir_path(NOTEBOOK_DIR_PATH)
+            .with_parent_notebook_name(NOTEBOOK_NAME)
+            .with_tags({"tag1": "value1"})
+            .build_operators()
+            )
+
 
 class TestDatabricksReusableJobCluster:
+
+    def test_version(self):
+        import reusable_job_cluster
+        try:
+            assert reusable_job_cluster.__version__ is not None
+        except Exception as e:
+            pytest.fail(f"An exception occurred when finding version: {e}")
 
     def test_builder_values(self):
         """
