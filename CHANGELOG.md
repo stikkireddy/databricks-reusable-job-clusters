@@ -1,5 +1,10 @@
 # Version changelog
 
+## 0.1.1
+
+- Fix change log for 0.1.0 removed redundant information
+- Fix reusable_job_cluster.__version__ for fetching the version of the module
+
 ## 0.1.0
 
 - Initial version release
