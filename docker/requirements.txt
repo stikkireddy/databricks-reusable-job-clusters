@@ -3,3 +3,4 @@ aiohttp
 requests
 apache-airflow-providers-databricks
 azure-servicebus
+databricks-sdk
