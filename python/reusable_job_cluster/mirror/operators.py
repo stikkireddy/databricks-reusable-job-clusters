@@ -24,7 +24,6 @@ XCOM_DEPS_CHECK_RUN_URL = "check_run_url"
 XCOM_RUN_URL = "run_url"
 
 
-# def databricks_custom_link(custom_name, custom_xcom_key):
 class DatabricksMirrorRunLink(BaseOperatorLink):
     """Constructs a link to monitor a Databricks Job Run."""
 
