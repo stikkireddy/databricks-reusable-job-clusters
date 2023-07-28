@@ -4,7 +4,7 @@ setup(
     name='databricks-reusable-job-clusters',
     author='Sri Tikkireddy, Juan Lamadrid',
     author_email='sri.tikkireddy@databricks.com, juan.lamadrid@databricks.com',
-    description='A package for building airflow operators to reuse Jobs Clusters',
+    description='A package for building airflow operators to reuse mirror airflow jobs on Databricks',
     packages=find_packages(exclude=['tests']),
     use_scm_version={
         "root": "..",
@@ -17,6 +17,7 @@ setup(
         "requests>=2.27, <3",
         "databricks-sdk>=0.2.1, <1"
     ],
+    entry_points={"airflow.plugins": ["reuse_link_plugin = reusable_job_cluster.mirror.links:DatabricksMirrorJobLinks"]},
     license_files=('LICENSE',),
     extras_require={
         'dev': [

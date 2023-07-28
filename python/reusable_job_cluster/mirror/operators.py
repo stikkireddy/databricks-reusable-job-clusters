@@ -5,7 +5,7 @@ import time
 from typing import Optional, Any, List, Dict, Sequence
 
 from airflow import DAG
-from airflow.models import BaseOperator, XCom, BaseOperatorLink
+from airflow.models import BaseOperator
 from airflow.providers.databricks.operators.databricks import DatabricksSubmitRunOperator
 from airflow.utils.context import Context
 from databricks.sdk.service import iam
@@ -13,57 +13,14 @@ from databricks.sdk.service.jobs import JobCluster, JobRunAs, WebhookNotificatio
     JobEmailNotifications
 
 from reusable_job_cluster.mirror import GlobalJobParameters
+from reusable_job_cluster.mirror.links import XCOM_MIRROR_RUN_PAGE_URL_KEY, XCOM_DEPS_CHECK_RUN_URL, \
+    XCOM_RUN_PAGE_URL_KEY, DatabricksMirrorRunLink, DatabricksDepCheckRunLink, DatabricksTaskRunLink
 from reusable_job_cluster.mirror.polling import PollingNotebookHandler
 from reusable_job_cluster.mirror.strategy import DatabricksMirroredWorkflow, get_airflow_dag_to_databricks_tasks
 from reusable_job_cluster.mirror.strategy import WorkflowHelper, check_task_name
 from reusable_job_cluster.vendor.hooks.databricks import DatabricksHook
 
 XCOM_PARENT_RUN_ID_KEY = "parent_run_id"
-XCOM_MIRROR_RUN_PAGE_URL_KEY = "mirror_run_url"
-XCOM_DEPS_CHECK_RUN_URL = "check_run_url"
-XCOM_RUN_URL = "run_url"
-
-
-class DatabricksMirrorRunLink(BaseOperatorLink):
-    """Constructs a link to monitor a Databricks Job Run."""
-
-    name = "Databricks Mirror Parent Job Run"
-
-    def get_link(
-            self,
-            operator: BaseOperator,
-            *,
-            ti_key: "TaskInstanceKey",
-    ) -> str:
-        return XCom.get_value(key=XCOM_MIRROR_RUN_PAGE_URL_KEY, ti_key=ti_key)
-
-
-class DatabricksDepCheckRunLink(BaseOperatorLink):
-    """Constructs a link to monitor a Databricks Job Run."""
-
-    name = "Databricks Dependency Task Check Run"
-
-    def get_link(
-            self,
-            operator: BaseOperator,
-            *,
-            ti_key: "TaskInstanceKey",
-    ) -> str:
-        return XCom.get_value(key=XCOM_DEPS_CHECK_RUN_URL, ti_key=ti_key)
-
-
-class DatabricksTaskRunLink(BaseOperatorLink):
-    """Constructs a link to monitor a Databricks Job Run. This is currently not working"""
-
-    name = "Databricks Dependency Task Check Run"
-
-    def get_link(
-            self,
-            operator: BaseOperator,
-            *,
-            ti_key: "TaskInstanceKey",
-    ) -> str:
-        return XCom.get_value(key=XCOM_RUN_URL, ti_key=ti_key)
 
 
 class DatabricksTaskCheckOperator(BaseOperator):
@@ -144,14 +101,9 @@ class DatabricksTaskCheckOperator(BaseOperator):
         self.run_id = context['ti'].xcom_pull(task_ids=self.task_name)
         return context["ti"].xcom_pull(task_ids=self.parent_job_task_id, key=XCOM_PARENT_RUN_ID_KEY)
 
-    def _wait_for_task_completion(self, context: Context, run_id: int, api_helper: WorkflowHelper):
+    def _wait_for_task_completion(self, run_id: int, api_helper: WorkflowHelper):
         task_status = api_helper.get_task_status(run_id, self.task_name)
         task_url = api_helper.get_task_url(run_id, self.task_name)
-        parent_run_url = api_helper.get_task_url(run_id)
-        if self.do_xcom_push and context is not None:
-            context["ti"].xcom_push(key=XCOM_MIRROR_RUN_PAGE_URL_KEY, value=parent_run_url)
-        if self.do_xcom_push and context is not None:
-            context["ti"].xcom_push(key=XCOM_RUN_URL, value=task_url)
         while task_status.is_terminal is False:
             self.log.info("Task %s is still running in state %s, follow at %s", self.task_name, task_status, task_url)
             time.sleep(5)
@@ -180,10 +132,21 @@ class DatabricksTaskCheckOperator(BaseOperator):
             raise Exception(f"Databricks task: {check_task} failed")
 
     def execute(self, context: Context):
-        this_run_id = self.get_run_id(context)
+        parent_run_id = self.get_run_id(context)
         api_helper = WorkflowHelper(self.mirrored_workflow, self._hook)
-        self._wait_for_task_check_completion(context, this_run_id, api_helper)
-        self._wait_for_task_completion(context, this_run_id, api_helper)
+
+        # record parent mirror run url
+        parent_run_url = api_helper.get_task_url(parent_run_id)
+        if self.do_xcom_push and context is not None:
+            context["ti"].xcom_push(key=XCOM_MIRROR_RUN_PAGE_URL_KEY, value=parent_run_url)
+
+        # record task run url
+        task_url = api_helper.get_task_url(parent_run_id, self.task_name)
+        if self.do_xcom_push and context is not None:
+            context["ti"].xcom_push(key=XCOM_RUN_PAGE_URL_KEY, value=task_url)
+
+        self._wait_for_task_check_completion(context, parent_run_id, api_helper)
+        self._wait_for_task_completion(parent_run_id, api_helper)
 
 
 class DatabricksMirrorJobCreateAndStartOperator(BaseOperator):
@@ -191,7 +154,6 @@ class DatabricksMirrorJobCreateAndStartOperator(BaseOperator):
 
     ui_color = "#1CB1C2"
     ui_fgcolor = "#fff"
-    # operator_extra_links = (DatabricksCustomLink("Mirrored Run Url", XCOM_PARENT_RUN_URL),)
     operator_extra_links = (DatabricksMirrorRunLink(),)
 
     def __init__(self,
@@ -244,10 +206,12 @@ class DatabricksMirrorJobCreateAndStartOperator(BaseOperator):
             polling_handler = PollingNotebookHandler(self._hook, self.polling_notebook_dir,
                                                      self.polling_notebook_name, self.log)
             airflow_polling_notebook_path = polling_handler.make_notebook_if_not_exists()
+            self.log.info("Polling notebook path is %s and it exists!", airflow_polling_notebook_path)
         self.mirrored_workflow.set_polling_notebook_path(airflow_polling_notebook_path)
         airflow_run_id = context['dag_run'].run_id
         airflow_dag_id = self.dag_id
         self.mirrored_workflow.idempotent_create_workflow_and_assets(self._hook)
+        self.log.info("Created/Updated mirrored workflow %s", self.mirrored_workflow.name)
         api_helper = WorkflowHelper(self.mirrored_workflow, self._hook)
         run_id = api_helper.run_now(notebook_params={
             GlobalJobParameters.DAG_ID.value: airflow_dag_id,
@@ -255,12 +219,17 @@ class DatabricksMirrorJobCreateAndStartOperator(BaseOperator):
             GlobalJobParameters.AIRFLOW_HOST_SECRET.value: self.airflow_host_secret,
             GlobalJobParameters.AIRFLOW_AUTH_HEADER_SECRET.value: self.airflow_auth_header_secret,
         })
+        self.log.info("Started mirrored workflow %s with run id %s", self.mirrored_workflow.name, run_id)
         run_url = api_helper.get_task_url(run_id)
         if self.do_xcom_push and context is not None:
             context["ti"].xcom_push(key=XCOM_MIRROR_RUN_PAGE_URL_KEY, value=run_url)
+            self.log.info("Pushed run url %s to xcom key: %s", run_url, XCOM_MIRROR_RUN_PAGE_URL_KEY)
+            context["ti"].xcom_push(key=XCOM_RUN_PAGE_URL_KEY, value=run_url)
+            self.log.info("Pushed run url %s to xcom key: %s", run_url, XCOM_RUN_PAGE_URL_KEY)
 
         if context is not None:
             context["ti"].xcom_push(key=XCOM_PARENT_RUN_ID_KEY, value=run_id)
+            self.log.info("Pushed run id %s to xcom key: %s", run_id, XCOM_PARENT_RUN_ID_KEY)
 
 
 class AirflowDBXClusterReuseBuilder:

@@ -1,5 +1,6 @@
 import abc
 import copy
+import functools
 import json
 from dataclasses import dataclass
 from typing import List, Dict, Any, Optional
@@ -67,16 +68,18 @@ class AirflowDagToDatabricksTask:
             task_name=op.task_id
         )
 
+    def _make_cluster_info(self, cluster_key: str = None,
+                           existing_cluster_id: str = None) -> Dict[str, str]:
+        return {"existing_cluster_id": existing_cluster_id} if existing_cluster_id is not None else \
+            {"job_cluster_key": cluster_key}
+
     def _make_actual_submit_task(self,
-                                 cluster_key: str = None,
-                                 existing_cluster_id: str = None) -> Task:
+                                 cluster_info: Dict[str, str]) -> Task:
         remove_fields = self.remove_fields or \
                         ["run_name", "idempotency_token", "access_control_list", "existing_cluster_id", "new_cluster"]
-        # cluster_info = {"existing_cluster_id": existing_cluster_id} if existing_cluster_id is not None else {}
         submit_data = {k: v for k, v in self.task_data.items() if k not in remove_fields}
         return Task.from_dict({**{"task_key": self.task_name,
-                                  "existing_cluster_id": existing_cluster_id,
-                                  # "0329-145545-rugby794"
+                                  **cluster_info,
                                   "depends_on": [
                                       {
                                           "task_key": self.get_conditional_task_name(),
@@ -85,12 +88,15 @@ class AirflowDagToDatabricksTask:
                                   ]},
                                **submit_data})
 
-    def _make_polling_task(self, notebook_path):
+    def _make_polling_task(self,
+                           notebook_path,
+                           cluster_info: Dict[str, str]
+                           ):
         depends_on = {} if self.depends_on_databricks_task is None else {"depends_on": [
             TaskDependency(task_key=check_task_name(task_id)) for task_id in self.depends_on_databricks_task]}
         return Task(
             task_key=self.get_check_task_name(),
-            existing_cluster_id="0329-145545-rugby794",
+            **cluster_info,
             **depends_on,
             notebook_task=NotebookTask(
                 notebook_path=notebook_path,
@@ -104,8 +110,9 @@ class AirflowDagToDatabricksTask:
             )
         )
 
-    def _make_conditional_task(self):
+    def _make_conditional_task(self) -> Task:
         left = f"tasks.{self.get_check_task_name()}.values.{self.conditional_value_key}"
+        # conditional tasks dont need clusters
         return Task(
             task_key=self.get_conditional_task_name(),
             depends_on=[TaskDependency(task_key=self.get_check_task_name())],
@@ -118,10 +125,11 @@ class AirflowDagToDatabricksTask:
                    cluster_key: str = None,
                    existing_cluster_id: str = None
                    ) -> List[Task]:
+        cluster_info = self._make_cluster_info(cluster_key, existing_cluster_id)
         return [
-            self._make_polling_task(polling_notebook_path),
-            self._make_conditional_task(),
-            self._make_actual_submit_task(cluster_key, existing_cluster_id)
+            self._make_polling_task(polling_notebook_path, cluster_info),
+            self._make_conditional_task(),  # conditional tasks dont need clusters
+            self._make_actual_submit_task(cluster_info)
         ]
 
 
@@ -161,6 +169,7 @@ class WorkflowHelper:
                 return RunState.from_json(json.dumps(t.get("state")))
         return None
 
+    @functools.lru_cache(maxsize=1024)
     def get_task_url(self, run_id: int, task_key: Optional[str] = None) -> Optional[str]:
         run = self._hook.get_run(run_id)
         tasks = run.get("tasks", [])
@@ -174,6 +183,7 @@ class WorkflowHelper:
         return None
 
 
+# TODO: refactor there are not multiple strategies, we can do this abstraction later
 class ClusterReuseStrategy(abc.ABC):
 
     def __init__(self,
@@ -235,6 +245,10 @@ class DatabricksMirroredWorkflow(ClusterReuseStrategy):
         self._name = name
         self._tasks: List[AirflowDagToDatabricksTask] = tasks
         self._polling_notebook_path = None
+
+    @property
+    def name(self):
+        return self._name
 
     def orphan_databricks_tasks(self) -> List[str]:
         return [task.task_name for task in self._tasks if not task.depends_on_databricks_task]
