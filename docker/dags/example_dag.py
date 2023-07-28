@@ -1,4 +1,3 @@
-import json
 from datetime import datetime, timedelta
 
 from airflow import DAG
@@ -32,7 +31,7 @@ notebook_task = DatabricksSubmitRunOperator(
     databricks_conn_id="databricks_default",
     existing_cluster_id="existing_cluster_id",
     # "{{ task_instance.xcom_pull(task_ids='create_cluster_task', key='infinite_loop_cluster_id') }}",
-    notebook_task={"notebook_path": "/Users/sri.tikkireddy@databricks.com/workflow-hack/helloworld"},
+    notebook_task={"notebook_path": "/Users/sri.tikkireddy@databricks.com/workflow-mirroring/helloworld"},
     dag=dag
 )
 
@@ -41,7 +40,7 @@ notebook_task_2 = DatabricksSubmitRunOperator(
     databricks_conn_id="databricks_default",
     existing_cluster_id="existing_cluster_id",
     # "{{ task_instance.xcom_pull(task_ids='create_cluster_task', key='infinite_loop_cluster_id') }}",
-    notebook_task={"notebook_path": "/Users/sri.tikkireddy@databricks.com/workflow-hack/helloworld"},
+    notebook_task={"notebook_path": "/Users/sri.tikkireddy@databricks.com/workflow-mirroring/helloworld"},
     dag=dag
 )
 
@@ -66,7 +65,16 @@ branch_op >> [dummy_task_3, notebook_task_2]
 notebook_task_2 >> dummy_task_2 >> end_task
 
 (AirflowDBXClusterReuseBuilder(dag)
- .with_existing_cluster_id("0329-145545-rugby794")
- .with_airflow_host_secret("https://8b46-74-102-235-225.ngrok-free.app/")
+ .with_job_clusters([JobCluster(
+    new_cluster=compute.ClusterSpec(
+        driver_node_type_id="n2-highmem-4",
+        node_type_id="n2-highmem-4",
+        num_workers=2,
+        spark_version="12.2.x-scala2.12",
+        spark_conf={"spark.databricks.delta.preview.enabled": "true"},
+    ),
+    job_cluster_key="job_cluster"
+)])
+ .with_airflow_host_secret("secrets://sri-scope-2/airflow_host")
  .with_airflow_auth_header_secret("secrets://sri-scope-2/airflow_header")
  .build())
