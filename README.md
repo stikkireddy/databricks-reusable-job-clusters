@@ -101,8 +101,8 @@ notebook_task_2 >> dummy_task_2 >> end_task
 (AirflowDBXClusterReuseBuilder(dag)
  .with_job_clusters([JobCluster(
     new_cluster=compute.ClusterSpec(
-        driver_node_type_id="i3.xlarge",
-        node_type_id="i3.xlarge",
+        driver_node_type_id="i3.xlarge", # or a different vm type depending on the cloud
+        node_type_id="i3.xlarge",  # or a different vm type depending on the cloud
         num_workers=2,
         spark_version="12.2.x-scala2.12",
         spark_conf={"spark.databricks.delta.preview.enabled": "true"},
@@ -110,7 +110,7 @@ notebook_task_2 >> dummy_task_2 >> end_task
     job_cluster_key="job_cluster"
   )])
   # .with_existing_cluster_id("existing_cluster_id") # use this if you want to use an existing cluster
- .with_airflow_host_secret("https://8b46-74-102-235-225.ngrok-free.app/")
+ .with_airflow_host_secret("secrets://sri-scope-2/airflow_host")
  .with_airflow_auth_header_secret("secrets://sri-scope-2/airflow_header")
  .build())
 ```
