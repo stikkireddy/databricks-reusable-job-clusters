@@ -28,7 +28,7 @@ or the ``api/2.1/jobs/runs/submit``
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, Dict
 
 from requests import exceptions as requests_exceptions
 
@@ -49,6 +49,7 @@ DELETE_RUN_ENDPOINT = ("POST", "api/2.1/jobs/runs/delete")
 REPAIR_RUN_ENDPOINT = ("POST", "api/2.1/jobs/runs/repair")
 OUTPUT_RUNS_JOB_ENDPOINT = ("GET", "api/2.1/jobs/runs/get-output")
 CANCEL_ALL_RUNS_ENDPOINT = ("POST", "api/2.1/jobs/runs/cancel-all")
+LIST_ALL_RUNS_ENDPOINT = ("POST", "api/2.1/jobs/runs/list")
 
 INSTALL_LIBS_ENDPOINT = ("POST", "api/2.0/libraries/install")
 UNINSTALL_LIBS_ENDPOINT = ("POST", "api/2.0/libraries/uninstall")
@@ -62,7 +63,8 @@ LIST_JOBS_ENDPOINT = ("GET", "api/2.1/jobs/list")
 
 WORKSPACE_GET_STATUS_ENDPOINT = ("GET", "api/2.0/workspace/get-status")
 
-RUN_LIFE_CYCLE_STATES = ["PENDING", "RUNNING", "TERMINATING", "TERMINATED", "SKIPPED", "INTERNAL_ERROR"]
+RUN_LIFE_CYCLE_STATES = ["PENDING", "RUNNING", "TERMINATING", "TERMINATED", "SKIPPED", "INTERNAL_ERROR",
+                         "BLOCKED", "WAITING_FOR_RETRY"]
 
 SPARK_VERSIONS_ENDPOINT = ("GET", "api/2.0/clusters/spark-versions")
 
@@ -408,6 +410,22 @@ class DatabricksHook(BaseDatabricksHook):
         """
         json = {"job_id": job_id}
         self._do_api_call(CANCEL_ALL_RUNS_ENDPOINT, json)
+
+    def list_all_runs_by_job(self, job_id: int,
+                             active_only: bool = None,
+                             completed_only: bool = None
+                             ) -> Dict[str, Any]:
+        """
+        list all active runs of a job. The runs are listed.
+
+        :param job_id: The canonical identifier of the job to cancel all runs of
+        """
+        json = {"job_id": job_id}
+        if active_only is not None:
+            json["active_only"] = active_only
+        if completed_only is not None:
+            json["completed_only"] = completed_only
+        return self._do_api_call(LIST_ALL_RUNS_ENDPOINT, json)
 
     def delete_run(self, run_id: int) -> None:
         """
