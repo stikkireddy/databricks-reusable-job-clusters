@@ -3,6 +3,6 @@ pytest-cov
 pytest-asyncio
 
 aiohttp>=3.6.3, <4
-requests>=2.27,<3
+requests>=2.34.0,<3
 
 apache-airflow
